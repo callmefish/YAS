@@ -347,15 +347,147 @@ class Noise {
     }, {});
     const color = hexColor(el.style.stroke);
     const d = el.getAttribute("d");
+    const waveType=["sine", "sawtooth", "triangle", "square", "noise"];
+    
     if (waveForms[color] && /M\d+\,\d+(L\d+\,\d+)+/.test(d)) {
-      const n = new Noise(null, null, waveForms[color] || "sine");
       const coords = d.slice(1).split("L").map(p => p.split(',').map(x => x | 0));
-
-      coords.forEach(c => n.add({ relX: c[0], relY: c[1] }, null, true));
+      var new_coords = CorFind(coords);
+      var n = [];
+      const n_sub0 = new Noise(null, null, waveForms[color] || "sine");
+      new_coords[0].forEach(c => n_sub0.add({relX: c[0], relY: c[1]}, null, true));
+      n.push(n_sub0);
+      console.log(new_coords[0].length);
+      var cur_color = waveForms[color];
+      for(let j=1;j<new_coords.length;j++){
+        console.log(new_coords[j].length);
+        for(let k=0;k<5;k++){
+          if(cur_color!=waveType[k]){
+            cur_color = waveType[k];
+            break;
+          }
+        }
+        var n_sub1 = new Noise(null, null, cur_color || "sine");
+        new_coords[j].forEach(c => n_sub1.add({relX: c[0], relY: c[1]}, null, true));
+        n.push(n_sub1);
+      }
       return n;
     }
-  }}
+  }
+}
 
+function CorFind(Coords){
+  if (Coords.length<3){
+      return Coords;
+  }
+  var rem_Coords = Resample(Coords);
+  
+  //find corners
+  var corners = [0];
+  var straws = [];
+  
+  var w = 3;
+
+  for (let i = w; i < rem_Coords.length - w; i++){
+    
+      var dist1 = distance([rem_Coords[i-w].x,rem_Coords[i-w].y], [rem_Coords[i+w].x,rem_Coords[i+w].y]);
+    
+      straws.push(dist1);
+  }
+  var threshold = Median(straws) * 0.95;
+  straws.unshift(0, 0, 0);
+  straws.push(0, 0, 0);
+  
+  for (let i = w; i < rem_Coords.length - w; i++) {
+      if(straws[i]<threshold){
+          var localMinmma = 1e4;
+          var localindex = i;
+          while((i<straws.length)&&(straws[i]<threshold)){
+              if(straws[i]<localMinmma){
+                  localMinmma = straws[i];
+                  localindex = i;
+              }
+              i=i+1;
+          }
+          corners.push(localindex);
+      }
+  }
+
+  corners.push(rem_Coords.length-1);
+
+
+  if(corners.length==2){return Coords;}
+  
+  var finalCoords = [];
+  console.log(corners);
+  
+  for(let i = 0;i<corners.length-1;i++){
+      var sub = [];
+    
+      for (let j=corners[i];j<=corners[i+1];j++){
+        
+          sub.push([Math.round(rem_Coords[j].x), Math.round(rem_Coords[j].y)])
+      }
+      finalCoords.push(sub);
+  }
+
+  return finalCoords;
+}
+
+function Median(Straw){
+  var straws_sort = [].concat(Straw);
+  straws_sort.sort();
+  if(straws_sort.length % 2 == 0){
+      return (straws_sort[straws_sort.length/2 - 1] + straws_sort[straws_sort.length/2])/2;
+  }
+  else{
+      return straws_sort[(straws_sort.length - 1)/2];
+  }
+}
+
+function Resample(Coords){
+  var new_Coords = new Array();
+  for (let i = 0; i<Coords.length; i++){
+      new_Coords.push({x:Coords[i][0], y:Coords[i][1]});
+  }
+  var XArr = new Array();
+  var YArr = new Array();
+  const L2 = new_Coords.length;
+  for (let i = 0; i < L2; i++) {
+      XArr.push(parseFloat(new_Coords[i].x+0.0));
+      YArr.push(parseFloat(new_Coords[i].y+0.0));
+  }
+  
+  //resampling
+  var a = parseFloat(new_Coords[0].x.toString());
+  var b = parseFloat(new_Coords[0].y.toString());
+  
+  var rem_Coords = [{x:a,y:b}];
+  
+  var Dist = 0;
+  var s = sqrt((max.apply(null, XArr)-min.apply(null, XArr))**2 + (max.apply(null, YArr)-min.apply(null, YArr))**2)/40;
+  var dist = 0;
+  for (let i=1; i<L2; i++){
+      dist = distance([new_Coords[i-1].x, new_Coords[i-1].y], [new_Coords[i].x, new_Coords[i].y]);
+    
+      if (Dist+dist>=s){
+          var k = (s-Dist)/dist;
+          var qx = new_Coords[i-1].x+k*(new_Coords[i].x-new_Coords[i-1].x);
+          var qy = new_Coords[i-1].y+k*(new_Coords[i].y-new_Coords[i-1].y);
+          rem_Coords.push({x:qx, y:qy});
+          new_Coords.splice(i-1, 1, {x:qx, y:qy});
+          i = i - 1;
+          Dist = 0;}
+      else {
+          Dist = Dist + dist;
+          if(i==new_Coords.length-1){break;}
+      }
+  }
+  if(distance([rem_Coords[0].x, rem_Coords[0].y], [rem_Coords[1].x, rem_Coords[1].y])<s){
+      rem_Coords.splice(0, 1);
+  }
+
+  return rem_Coords;
+}
 
 const moveStart = e => {
   moveMode = {
@@ -657,7 +789,11 @@ $`#inputFile`.addEventListener('change', e => {
     const innerSVG = $$('svg', container)[0];
     $$("path", innerSVG).forEach(p => {
       const n = Noise.fromPath(p);
-      if (n) music.push(n);
+      if (n) {
+        for(let i=0;i<n.length;i++){
+          music.push(n[i]);
+        }
+      }
     });
     $`#inputFile`.value = "";
     setViewBox();
