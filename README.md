@@ -1,0 +1,2 @@
+# YAS
+In this project, we develop a website, namely YAS, which make it possible to create music by stroke. This website  provides a funny way to create music without learning an instrument. It works the way you think, focusing on the creative process, not the techniques required to play an instrument. Besides, out project create an extension function of website, which contains a recorder and audio reversion. This extension is made for an interesting game.
